@@ -1,0 +1,25 @@
+{
+  "name": "hls-saas-worker",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "dev": "tsx watch src/index.ts"
+  },
+  "dependencies": {
+    "bullmq": "^5.0.0",
+    "drizzle-orm": "^0.29.0",
+    "postgres": "^3.4.0",
+    "fluent-ffmpeg": "^2.1.2",
+    "@aws-sdk/client-s3": "^3.0.0",
+    "@aws-sdk/lib-storage": "^3.0.0",
+    "dotenv": "^16.0.0",
+    "fs-extra": "^11.0.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.0.0",
+    "@types/node": "^20.0.0",
+    "@types/fluent-ffmpeg": "^2.1.0",
+    "@types/fs-extra": "^11.0.0"
+  }
+}
