@@ -49,10 +49,11 @@ services:
       - hls_network
 
   worker:
+    image: hls-saas-worker:latest
     build:
       context: ./worker
       dockerfile: Dockerfile
-    container_name: hls_worker
+    container_name: hls_orchestrator
     environment:
       - DATABASE_URL=postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres:5432/${DB_NAME:-video_saas}
       - REDIS_HOST=redis
@@ -64,6 +65,8 @@ services:
       - R2_ENDPOINT=https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com
       - R2_PUBLIC_URL=${R2_PUBLIC_URL}
       - WORKER_CONCURRENCY=${WORKER_CONCURRENCY:-1}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       - postgres
       - redis

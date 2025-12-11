@@ -32,7 +32,7 @@ export async function processJob(job: Job) {
 
     // Analyze Video
     console.log("Analyzing video metadata...");
-    const metadata = await new Promise<ffmpeg.FfmpegStreamMetadata>((resolve, reject) => {
+    const metadata = await new Promise<ffmpeg.FfprobeData>((resolve, reject) => {
         ffmpeg.ffprobe(inputPath, (err, metadata) => {
             if (err) reject(err);
             else resolve(metadata);

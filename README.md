@@ -40,27 +40,31 @@ The background processor handling video manipulation.
    Create a `.env` file in the root directory:
 
    ```env
-   # Database
+   # --- Database ---
    DB_USER=postgres
    DB_PASSWORD=postgres
    DB_NAME=video_saas
+   # Connection string for the API/Worker to connect to Postgres
    DATABASE_URL=postgresql://postgres:postgres@localhost:5432/video_saas
 
-   # Auth
+   # --- Auth ---
+   # Random string for BetterAuth encryption
    BETTER_AUTH_SECRET=your_random_secret
 
-   # Redis
+   # --- Redis ---
    REDIS_HOST=localhost
    REDIS_PORT=6379
 
-   # Cloudflare R2
+   # --- Cloudflare R2 / S3 ---
    R2_ACCOUNT_ID=your_account_id
    R2_ACCESS_KEY_ID=your_access_key
    R2_SECRET_ACCESS_KEY=your_secret_key
    R2_BUCKET_NAME=your_bucket_name
+   # Valid Public URL for your bucket (e.g. custom domain or R2 dev URL)
    R2_PUBLIC_URL=https://pub-xxx.r2.dev
 
-   # Worker
+   # --- Infrastructure ---
+   # Number of concurrent ephemeral containers the orchestrator can spawn
    WORKER_CONCURRENCY=2
    ```
 
