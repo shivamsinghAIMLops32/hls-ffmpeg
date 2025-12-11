@@ -19,6 +19,7 @@ export const videoJobs = pgTable("video_jobs", {
   r2Key: text("r2_key").notNull(),
   hlsUrl: text("hls_url"),
   thumbnailUrl: text("thumbnail_url"),
+  waveformUrl: text("waveform_url"),
   progress: integer("progress").default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
