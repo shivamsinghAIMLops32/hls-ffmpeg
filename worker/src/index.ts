@@ -1,5 +1,5 @@
 import { Worker } from "bullmq";
-import { processJob } from "./processor";
+import { processJob } from "./processor.js";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -17,7 +17,7 @@ const worker = new Worker(
   },
   {
     connection,
-    concurrency: 1, // Process one video at a time per container
+    concurrency: parseInt(process.env.WORKER_CONCURRENCY || "1"),
   }
 );
 

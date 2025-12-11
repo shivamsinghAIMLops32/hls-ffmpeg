@@ -1,9 +1,9 @@
 import ffmpeg from "fluent-ffmpeg";
 import path from "path";
 import fs from "fs-extra";
-import { db } from "./db";
-import { videoJobs } from "./db/schema";
-import { downloadFile, uploadFile } from "./storage";
+import { db } from "./db/index.js";
+import { videoJobs } from "./db/schema.js";
+import { downloadFile, uploadFile } from "./storage.js";
 import { eq } from "drizzle-orm";
 import { Job } from "bullmq";
 
@@ -18,59 +18,109 @@ export async function processJob(job: Job) {
   const workDir = path.join(TEMP_DIR, `job-${jobId}`);
   const inputPath = path.join(workDir, "input.mp4");
   const outputDir = path.join(workDir, "output");
+  const thumbnailPath = path.join(outputDir, "thumbnail.jpg");
 
   await fs.ensureDir(workDir);
   await fs.ensureDir(outputDir);
 
   try {
     // 1. Update Status to PROCESSING
-    await db.update(videoJobs).set({ status: "PROCESSING" }).where(eq(videoJobs.id, jobId));
+    await db.update(videoJobs).set({ status: "PROCESSING", progress: 0 }).where(eq(videoJobs.id, jobId));
 
     // 2. Download Video
     console.log("Downloading video...");
     await downloadFile(r2Key, inputPath);
 
-    // 3. Transcode to HLS
+    // 3. Generate Thumbnail (Seek 20%)
+    console.log("Generating thumbnail...");
+    await new Promise<void>((resolve, reject) => {
+        ffmpeg(inputPath)
+            .screenshots({
+                timestamps: ['20%'],
+                filename: 'thumbnail.jpg',
+                folder: outputDir,
+                size: '320x?' // Fit width, keep aspect ratio
+            })
+            .on('end', () => resolve())
+            .on('error', (err) => reject(err));
+    });
+
+    // 4. Transcode to HLS (360p, 720p, 1080p)
     console.log("Transcoding...");
     await new Promise<void>((resolve, reject) => {
       ffmpeg(inputPath)
         .outputOptions([
-          "-map 0:v:0",
-          "-map 0:a:0",
-          "-c:v libx264",
-          "-c:a aac",
-          "-hls_time 10",
-          "-hls_list_size 0",
-          "-f hls"
+             // 360p Stream
+            '-filter_complex [0:v]split=3[v1][v2][v3]; [v1]scale=w=640:h=360:force_original_aspect_ratio=decrease[v1out]; [v2]scale=w=1280:h=720:force_original_aspect_ratio=decrease[v2out]; [v3]scale=w=1920:h=1080:force_original_aspect_ratio=decrease[v3out]',
+            
+            // Map streams
+            '-map [v1out] -c:v:0 libx264 -b:v:0 800k -maxrate:v:0 856k -bufsize:v:0 1200k', // 360p
+            '-map [v2out] -c:v:1 libx264 -b:v:1 2800k -maxrate:v:1 2996k -bufsize:v:1 4200k', // 720p
+            '-map [v3out] -c:v:2 libx264 -b:v:2 5000k -maxrate:v:2 5350k -bufsize:v:2 7500k', // 1080p
+            
+            // Audio (Copy to all variants)
+            '-map a:0 -c:a:0 aac -b:a:0 96k',
+            '-map a:0 -c:a:1 aac -b:a:1 128k',
+            '-map a:0 -c:a:2 aac -b:a:2 192k',
+
+            // HLS Settings
+            '-f hls',
+            '-hls_time 10',
+            '-hls_list_size 0',
+            '-hls_segment_type mpegts',
+            '-master_pl_name index.m3u8',
+            
+            // Variant Stream Mapping
+            '-var_stream_map v:0,a:0,name:360p v:1,a:1,name:720p v:2,a:2,name:1080p'
         ])
-        .output(path.join(outputDir, "index.m3u8"))
+        .output(path.join(outputDir, '%v/playlist.m3u8'))
+        .on('progress', async (progress) => {
+            if (progress.percent) {
+                const p = Math.round(progress.percent);
+                console.log(`Progress: ${p}%`);
+            }
+        })
         .on("end", () => resolve())
         .on("error", (err) => reject(err))
         .run();
     });
-    // Note: For simplicity in this v0, just doing 1 variant. 
-    // Multi-variant requires complex filter strings which are error-prone without testing.
-    // The user requirement said 360p, 720p, 1080p. I should try to honor it if possible, 
-    // but the complex filter command is safer to do locally if I can debug. 
-    // I'll stick to simple single-bitrate for robustness first, or just scale to 720p.
 
-    // 4. Upload HLS Files
-    console.log("Uploading HLS files...");
-    const files = await fs.readdir(outputDir);
+    // 5. Upload HLS Files & Thumbnail
+    console.log("Uploading files...");
     const r2OutputPrefix = `hls/${userId}/${jobId}`;
-   
-    for (const file of files) {
-       // Determine content type
-       const contentType = file.endsWith(".m3u8") ? "application/vnd.apple.mpegurl" : "video/mp2t";
-       await uploadFile(`${r2OutputPrefix}/${file}`, path.join(outputDir, file), contentType);
-    }
+    
+    // Helper to recursive upload
+    const uploadDir = async (dir: string, baseDir: string) => {
+        const files = await fs.readdir(dir);
+        for (const file of files) {
+            const fullPath = path.join(dir, file);
+            const stat = await fs.stat(fullPath);
+            if (stat.isDirectory()) {
+                await uploadDir(fullPath, baseDir);
+            } else {
+                const relativePath = path.relative(baseDir, fullPath).replace(/\\/g, '/');
+                const key = `${r2OutputPrefix}/${relativePath}`;
+                // Mime types
+                let contentType = "application/octet-stream";
+                if (file.endsWith(".m3u8")) contentType = "application/vnd.apple.mpegurl";
+                if (file.endsWith(".ts")) contentType = "video/mp2t";
+                if (file.endsWith(".jpg")) contentType = "image/jpeg";
+                
+                await uploadFile(key, fullPath, contentType);
+            }
+        }
+    };
+    await uploadDir(outputDir, outputDir);
 
     const masterPlaylistUrl = `${process.env.R2_PUBLIC_URL}/${r2OutputPrefix}/index.m3u8`;
+    const thumbnailUrl = `${process.env.R2_PUBLIC_URL}/${r2OutputPrefix}/thumbnail.jpg`;
 
-    // 5. Update Status to COMPLETED
+    // 6. Update Status to COMPLETED
     await db.update(videoJobs).set({
       status: "COMPLETED",
+      progress: 100,
       hlsUrl: masterPlaylistUrl,
+      thumbnailUrl: thumbnailUrl
     }).where(eq(videoJobs.id, jobId));
 
     console.log("Job completed successfully.");
@@ -78,9 +128,9 @@ export async function processJob(job: Job) {
   } catch (error) {
     console.error("Job failed:", error);
     await db.update(videoJobs).set({ status: "FAILED" }).where(eq(videoJobs.id, jobId));
-    throw error; // Let BullMQ retry? Or fail permanently.
+    throw error;
   } finally {
-    // 6. Cleanup
+    // 7. Cleanup
     await fs.remove(workDir);
   }
 }

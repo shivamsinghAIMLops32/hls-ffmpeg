@@ -54,6 +54,8 @@ export const videoJobs = pgTable("video_jobs", {
   originalUrl: text("original_url"), // Optional, populated after upload or if we store it
   r2Key: text("r2_key").notNull(), // Key in Input bucket
   hlsUrl: text("hls_url"),
+  thumbnailUrl: text("thumbnail_url"),
+  progress: integer("progress").default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
